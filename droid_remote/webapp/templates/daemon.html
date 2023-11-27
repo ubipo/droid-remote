@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Droid Remote</title>
+
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/htmx-response-targets.js"></script>
+  <script src="/static/htmx-ws.js"></script>
+  <link rel="stylesheet" href="/static/pico.min.css" />
+</head>
+<body hx-ext="response-targets" >
+  <main class="container">
+    <h1>Droid Remote</h1>
+  
+    <div class="errors" id="errors"></div>
+    
+    <fieldset>
+      <legend><h2>Device</h2></legend>
+
+      <div class="errors" id="device-error"></div>
+
+      <div class="buttonset">
+        {% for title, path in [
+          ('Battery status', '/battery-status'),
+          ('Reboot', '/reboot'),
+          ('Wake via ADB', '/wake-via-adb'),
+          ('Wake via Tasker', '/wake-via-tasker'),
+          ('Wake lock', '/wake-lock'),
+          ('Wake unlock', '/wake-unlock'),
+          ('Idle info', '/idle-info'),
+        ] %}
+          <button
+            hx-post="{{ path }}"
+            hx-target="#device-results"
+            hx-target-*="#device-error"
+            hx-indicator="#device-spinner">
+          {{ title }}
+          </button>
+        {% endfor %}
+      </div>
+
+      <form>
+        <input type="number" min="0" max="100" name="brightness" />
+        <button
+          hx-post="/set-screen-brightness"
+          hx-target="#device-results"
+          hx-target-*="#device-error"
+          hx-indicator="#device-spinner">
+          Set brightness
+        </button>
+      </form>
+
+      <fieldset>
+        <legend>Output</legend>
+        <progress id="device-spinner" class="htmx-progress"></progress>
+        <div id="device-results" class="output-box">
+          <i class="no-output">No output yet. Perform an action using the buttons above.</i>
+        </div>
+      </fieldset>
+    </fieldset>
+
+    <fieldset>
+      <legend><h2>General</h2></legend>
+
+      <div class="errors" id="general-error"></div>
+
+      <div class="buttonset">
+        {% for title, path in [
+          ('ADB connect (uses Tasker)', '/adb-connect'),
+          ('ADB list devices', '/adb-list-devices'),
+          ('Start Tasker', '/start-tasker'),
+          ('Start Tailscale VPN service', '/start-tailscale-vpnservice'),
+          ('Get VPN IP addresses', '/get-vpn-ip-addresses'),
+          ('Ensure ready for action', '/ensure-ready-for-action'),
+        ] %}
+          <button
+            hx-post="{{ path }}"
+            hx-target="#general-results"
+            hx-target-*="#general-error"
+            hx-indicator="#general-spinner">
+          {{ title }}
+          </button>
+        {% endfor %}
+      </div>
+
+      <fieldset>
+        <legend>Output</legend>
+        <progress id="general-spinner" class="htmx-progress"></progress>
+        <div id="general-results" class="output-box">
+          <i class="no-output">No output yet. Perform an action using the buttons above.</i>
+        </div>
+      </fieldset>
+    </fieldset>
+
+    <fieldset>
+      <legend><h2>Screen</h2></legend>
+      <div class="errors" id="screen-error"></div>
+      <div class="buttonset">
+        {% for title, path in [
+          ('Read screen', '/read-screen'),
+          ('Go home', '/go-home'),
+        ] %}
+          <button
+            hx-post="{{ path }}"
+            hx-target="#screen-results"
+            hx-target-*="#screen-error"
+            hx-indicator="#screen-spinner">
+          {{ title }}
+          </button>
+        {% endfor %}
+      </div>
+      <fieldset>
+        <legend>Output</legend>
+        <progress id="screen-spinner" class="htmx-progress"></progress>
+        <div id="screen-results" class="output-box">
+          <i class="no-output">No output yet. Perform an action using the buttons above.</i>
+        </div>
+      </fieldset>
+    </fieldset>
+    
+    <fieldset>
+      <legend><h2>Itsme</h2></legend>
+      <form>
+        <fieldset>
+          <legend>Automatically...</legend>
+          <label>
+            <input type="checkbox" name="auto-tap-card" />
+            Tap card
+          </label>
+          <label>
+            <input type="checkbox" name="auto-enter-pin" />
+            Enter pin
+          </label>
+          <label>
+            <input type="checkbox" name="auto-dismiss-expired" />
+            Dismiss expired action
+          </label>
+        </fieldset>
+        <div class="errors" id="itsme-errors"></div>
+        <div class="buttonset">
+          <button
+            hx-post="/itsme/launch"
+            hx-target="#itsme-results"
+            hx-target-*="#itsme-errors"
+            hx-indicator="#itsme-spinner">
+            Launch app
+          </button>
+          <button
+            hx-post="/itsme/force-stop"
+            hx-target="#itsme-results"
+            hx-target-*="#itsme-errors"
+            hx-indicator="#itsme-spinner">
+            Force stop
+          </button>
+        </div>
+        <h3>Confirm known action</h3>
+        <div class="buttonset">
+          {% if itsme_known_actions.app_actions|length == 0 %}
+            <p>No known actions</p>
+          {% else %}
+            {% for app, actions in itsme_known_actions.app_actions.items() %}
+              {% for action in actions %}
+                <button
+                  class="secondary"
+                  hx-post="/itsme/confirm-known-action?app={{ app }}&action={{ action }}"
+                  hx-target="#itsme-results"
+                  hx-target-*="#itsme-errors"
+                  hx-indicator="#itsme-spinner">
+                  {{ app }}: {{ action }}
+                </button>
+              {% endfor %}
+            {% endfor %}
+          {% endif %}
+        </div>
+        <h3>Parse screen</h3>
+        <div class="buttonset">
+          {% for title, screen_name in [('Any', 'any'), ('Home', 'home'), ('Action', 'action'), ('Post-confirm', 'post-confirm')] %}
+            <button
+              hx-post="/itsme/parse-screen/{{ screen_name }}"
+              hx-target="#itsme-results"
+              hx-target-*="#itsme-errors"
+              hx-indicator="#itsme-spinner">
+              {{ title }}
+            </button>
+          {% endfor %}
+          <progress id="itsme-spinner" class="htmx-progress"></progress>
+        </div>
+        <fieldset>
+          <legend>Output</legend>
+          <div id="itsme-results" class="output-box">
+            <i class="no-output">No output yet. Perform an action using the buttons above.</i>
+          </div>
+        </fieldset>
+      </form>
+    </fieldset>
+
+    <h2>Log</h2>
+    <div hx-ext="ws" ws-connect="/ws">
+      <pre id="log" hx-swap-oob="beforeend"></pre>
+    </div>
+  </main>
+  
+  <style>
+    :root {
+      --form-element-spacing-vertical: 0.3rem;
+      --nav-element-spacing-horizontal: 0.2rem;
+    }
+
+    .errors {
+      color: red;
+    }
+
+    fieldset {
+      margin-bottom: 1em;
+    }
+
+    form label {
+      display: block;
+    }
+
+    img.small {
+      width: 20rem;
+    }
+
+    progress.htmx-progress {
+      display: none;
+    }
+
+    progress.htmx-progress.htmx-request {
+      display: block;
+    }
+
+    .output-box {
+      border: 1px solid #ccc;
+      border-radius: 0.25em;
+      padding: 0.5em;
+      margin-bottom: 1em;
+      background-color: #fafafa;
+    }
+
+    .no-output {
+      color: #888;
+    }
+
+    .buttonset {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      margin-bottom: 1em;
+    }
+
+    .buttonset > button {
+      margin-right: 0.5em;
+      margin-bottom: 0.5em;
+      width: initial;
+    }
+  </style>
+</body>
+</html>
