@@ -1,4 +1,5 @@
-from typing import Callable
+import asyncio
+from typing import Callable, Optional
 from aiohttp.web import Request, post
 import html
 import logging
@@ -34,6 +35,40 @@ async def read_screen():
     return f"<pre>{html.escape(screen_xml)}</pre>"
 
 
+adb_keep_alive_task: Optional[asyncio.Task] = None
+
+
+async def get_adb_keep_alive():
+    if adb_keep_alive_task is not None:
+        try:
+            adb_keep_alive_task.result()
+        except asyncio.InvalidStateError:
+            pass
+        except asyncio.CancelledError:
+            return "ADB keep-alive task cancelled."
+        except Exception as e:
+            return f"ADB keep-alive task failed: {e}"
+        return "ADB keep-alive task is running."
+    return "ADB keep-alive task is not running."
+
+
+async def start_adb_keep_alive():
+    global adb_keep_alive_task
+    if adb_keep_alive_task is not None and not adb_keep_alive_task.done():
+        return "ADB keep-alive is already running."
+    adb_keep_alive_task = asyncio.create_task(adb.send_periodic_keep_alive())
+    def done_callback(task: asyncio.Task):
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.info("ADB keep-alive task cancelled.")
+        except Exception as e:
+            logger.exception(f"ADB keep-alive task failed: {e}")
+    
+    adb_keep_alive_task.add_done_callback(done_callback)
+    return "Started ADB keep-alive task."
+
+
 def create_routes(tasker_callback_futures: CallbackFutures):
     device_handlers: dict[str, Callable] = {
         "adb-connect": lambda: high_level.adb_pair_and_connect(tasker_callback_futures),
@@ -55,5 +90,9 @@ def create_routes(tasker_callback_futures: CallbackFutures):
         "read-screen": read_screen,
         "go-home": termux.go_home,
     }
-    handlers = device_handlers | screen_handlers
-    return [post(name, handler) for name, handler in handlers.items()]
+    persistent_task_handlers: dict[str, Callable] = {
+        "get-adb-keep-alive": get_adb_keep_alive,
+        "start-adb-keep-alive": start_adb_keep_alive,
+    }
+    post_handlers = device_handlers | screen_handlers | persistent_task_handlers
+    return [post(name, handler) for name, handler in post_handlers.items()]
