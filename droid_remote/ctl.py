@@ -16,10 +16,13 @@ from .health import check_daemon_health_http, DaemonHealthCheckError
 logger = logging.getLogger(__name__)
 
 
-def status_server_daemon(pid_file_paths: PidFilePaths, base_url: str):
-    pid = read_pid(pid_file_paths.daemon_pid)
-    process_healthy = check_if_process_running(pid)
-    http_healthy = check_daemon_health_http(base_url)
+def status_server_daemon(config: CtlConfig):
+    pid = read_pid(config.pid_file_paths.daemon_pid)
+    process_healthy = check_if_process_running(
+        pid,
+        config.treat_kill_permission_error_as_not_running,
+    )
+    http_healthy = check_daemon_health_http(config.monitoring_base_url)
     if not process_healthy and not http_healthy:
         logger.info("Server not running")
         return
@@ -33,9 +36,12 @@ def status_server_daemon(pid_file_paths: PidFilePaths, base_url: str):
     logger.info("Server running and healthy")
         
 
-def status_watchdog_daemon(pid_file_paths: PidFilePaths):
-    pid = read_pid(pid_file_paths.daemon_pid)
-    process_healthy = check_if_process_running(pid)
+def status_watchdog_daemon(config: CtlConfig):
+    pid = read_pid(config.pid_file_paths.daemon_pid)
+    process_healthy = check_if_process_running(
+        pid,
+        config.treat_kill_permission_error_as_not_running,
+    )
     if not process_healthy:
         logger.info("Watchdog not running")
         return
@@ -69,10 +75,7 @@ def main():
     args = parser.parse_args()
     action = args.action
     config = safe_generate(args, generate_ctl_config_from_args)
-    pid_file_paths = config.pid_file_paths
-    daemon_name = config.daemon_name
-    base_url = config.monitoring_base_url
-    setup_logging(config.ctl_log_file_path)
+    setup_logging(config.ctl_log_file_path, log_file_level=config.ctl_log_file_log_level)
 
     try:
         if action == CtlActions.FOREGROUND.cli_name:
@@ -82,17 +85,17 @@ def main():
                 run_server_foreground(config)
         elif action == CtlActions.STATUS.cli_name:
             if config.watchdog:
-                status_watchdog_daemon(pid_file_paths)
+                status_watchdog_daemon(config)
             else:
-                status_server_daemon(pid_file_paths, base_url)
+                status_server_daemon(config)
         elif action == CtlActions.START.cli_name:
             asyncio.run(start_daemon(config))
         elif action == CtlActions.RESTART.cli_name:
             asyncio.run(restart_daemon(config))
         elif action == CtlActions.STOP.cli_name:
-            stop_daemon(pid_file_paths, daemon_name)
+            stop_daemon(config)
         elif action == CtlActions.FORCE_STOP.cli_name:
-            force_stop_daemon(pid_file_paths, daemon_name)
+            force_stop_daemon(config)
         else:
             print(f"Unknown action {action}", file=sys.stderr)
     except ExitedBeforeFirstLogLineError:

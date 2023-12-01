@@ -12,13 +12,14 @@ class DaemonHealthCheckError(Exception):
 
 def check_daemon_health_http(base_url: str):
     try:
-        logger.debug(f"Checking daemon health at {base_url}/metrics")
+        url = f"{base_url}/metrics"
         with urllib.request.urlopen(base_url + "/metrics", timeout=1) as resp:
-            if resp.status // 100 != 2:
+            status_range = resp.status // 100
+            if status_range != 2:
+                logger.warning(f"Daemon health check failed: HTTP GET to '{url}' returned status code {resp.status} ({status_range=})")
                 raise DaemonHealthCheckError(
                     f"/metrics HTTP endpoint returned status code {resp.status}"
                 )
-            logger.debug("Daemon health check successful")
             return True
     except urllib.error.URLError as e:
         if isinstance(e.reason, ConnectionRefusedError):

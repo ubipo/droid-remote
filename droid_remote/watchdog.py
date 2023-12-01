@@ -67,7 +67,11 @@ async def run_watchdog(config: CtlConfig):
 
 def main(config: CtlConfig):
     pid_file_paths = config.pid_file_paths
-    ensure_no_existing_process_or_exit(pid_file_paths, config.daemon_name)
+    ensure_no_existing_process_or_exit(
+        pid_file_paths,
+        config.daemon_name,
+        config.treat_kill_permission_error_as_not_running,
+    )
     init_pid_files(pid_file_paths)
     try:
         asyncio.run(run_watchdog(config))

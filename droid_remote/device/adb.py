@@ -1,9 +1,15 @@
+import asyncio
 from dataclasses import dataclass
 from functools import cached_property
 from lxml import etree
 import re
+from datetime import timedelta as Timedelta
 
 from ..subprocess_utils import run_command
+
+
+# Wireless ADB timeout is 20 minutes
+ADB_KEEPALIVE_INTERVAL = Timedelta(minutes=4)
 
 
 async def run_adb_command(*args: str):
@@ -77,6 +83,12 @@ async def force_stop_app(package_name: str):
 
 async def wake_up():
     return await run_adb_command("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+
+
+async def send_periodic_keep_alive():
+    while True:
+        await run_adb_command("shell", "ls")
+        await asyncio.sleep(ADB_KEEPALIVE_INTERVAL.total_seconds())
 
 
 @dataclass(frozen=True)

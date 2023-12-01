@@ -1,3 +1,4 @@
+import logging
 import argparse
 import dataclasses
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ class ServerConfig(DataClassJsonMixin):
     http_basic_password: Optional[str] = None
     ngrok_domain: Optional[str] = None
     ensure_ready_for_action: bool = False
+    log_file_log_level: int = logging.INFO
 
     @property
     def daemon_name(self):
@@ -45,8 +47,10 @@ class ServerConfig(DataClassJsonMixin):
 class CtlConfig(ServerConfig):
     ctl_log_file_path: Path
     watchdog_pid_file_path: Path
-    watchdog: bool = False
     monitoring_base_url: str
+    treat_kill_permission_error_as_not_running: bool = False
+    watchdog: bool = False
+    ctl_log_file_log_level: int = logging.INFO
 
     @property
     def daemon_name(self):
@@ -168,7 +172,7 @@ def generate_defaults():
     )
 
 
-def generate_server_config_from_args(args: argparse.Namespace):
+def generate_server_config_from_args(args: argparse.Namespace) -> ServerConfig:
     defaults = generate_defaults()
     config_json = getattr(args, "config_json")
     if config_json is not None:
@@ -186,6 +190,10 @@ def generate_server_config_from_args(args: argparse.Namespace):
     ensure_ready_for_action = bool_arg_env_or(
         args, "ensure_ready_for_action", defaults.ensure_ready_for_action
     )
+    log_file_log_level = arg_env_or(
+        args, "log_file_log_level", defaults.log_file_log_level,
+        convert_from_str=lambda s: logging.getLevelNamesMapping()[s.upper()],
+    )
     return ServerConfig(
         log_file_path=log_file_path,
         pid_file_path=pid_file_path,
@@ -195,10 +203,11 @@ def generate_server_config_from_args(args: argparse.Namespace):
         http_basic_password=http_basic_password,
         ngrok_domain=ngrok_domain,
         ensure_ready_for_action=ensure_ready_for_action,
+        log_file_log_level=log_file_log_level,
     )
 
 
-def generate_ctl_config_from_args(args: argparse.Namespace):
+def generate_ctl_config_from_args(args: argparse.Namespace) -> CtlConfig:
     defaults = generate_defaults()
     config_json = getattr(args, "config_json")
     if config_json is not None:
@@ -222,12 +231,21 @@ def generate_ctl_config_from_args(args: argparse.Namespace):
     ctl_log_file_path = Path(str_arg_env_or(
         args, "ctl_log_file", defaults.ctl_log_file_path
     ))
+    treat_kill_permission_error_as_not_running = bool_arg_env_or(
+        args, "treat_kill_permission_error_as_not_running", False
+    )
+    ctl_log_file_log_level = arg_env_or(
+        args, "ctl_log_file_log_level", defaults.ctl_log_file_log_level,
+        convert_from_str=lambda s: logging.getLevelNamesMapping()[s.upper()],
+    )
     return CtlConfig(
         **dataclasses.asdict(server_config),
         ctl_log_file_path=ctl_log_file_path,
-        watchdog=watchdog,
         watchdog_pid_file_path=watchdog_pid_file_path,
         monitoring_base_url=monitoring_base_url,
+        treat_kill_permission_error_as_not_running=treat_kill_permission_error_as_not_running,
+        watchdog=watchdog,
+        ctl_log_file_log_level=ctl_log_file_log_level,
     )
 
 
@@ -283,6 +301,11 @@ def populate_server_arg_parser(parser: argparse.ArgumentParser):
         default=None,
         help="Droid Remote config as JSON. Overrides all other arguments.",
     )
+    parser.add_argument(
+        "--log-file-log-level",
+        type=lambda s: logging.getLevelNamesMapping()[s.upper()],
+        help=f"Log level for log file. Default: {logging.getLevelName(defaults.log_file_log_level)}",
+    )
 
 
 class CtlActions(Enum):
@@ -300,6 +323,7 @@ class CtlActions(Enum):
 
 def populate_ctl_arg_parser(parser: argparse.ArgumentParser):
     populate_server_arg_parser(parser)
+    defaults = generate_defaults()
     parser.add_argument(
         "action",
         choices=[action.cli_name for action in CtlActions],
@@ -323,10 +347,21 @@ def populate_ctl_arg_parser(parser: argparse.ArgumentParser):
         "--monitor-ngrok-domain",
         action="store_true",
         default=None,
-        help="Use 'https://{ngrok_domain}' as the base URL for monitoring.",
+        help="Use 'https://<ngrok_domain>' as the base URL for monitoring.",
     )
     parser.add_argument(
         "--ctl-log-file",
         default=None,
         help="Path to ctl log file",
+    )
+    parser.add_argument(
+        "--treat-kill-permission-error-as-not-running",
+        action="store_true",
+        default=None,
+        help="Treat a PermissionError when sending a kill signal as the process/group not running.",
+    )
+    parser.add_argument(
+        "--ctl-log-file-log-level",
+        type=lambda s: logging.getLevelNamesMapping()[s.upper()],
+        help=f"Log level for ctl log file. Default: {logging.getLevelName(defaults.ctl_log_file_log_level)}",
     )

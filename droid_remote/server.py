@@ -65,7 +65,7 @@ def main(config: Optional[ServerConfig] = None):
     prometheus_process_info.info({ "start_time": str(start_time) })
 
     event_bus = EventBus()
-    setup_logging(config.log_file_path, event_bus)
+    setup_logging(config.log_file_path, event_bus, config.log_file_log_level)
     try:
         asyncio.run(run_server(event_bus, config))
     except asyncio.CancelledError:

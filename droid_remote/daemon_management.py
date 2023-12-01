@@ -4,28 +4,41 @@ from asyncio import subprocess
 import signal
 import sys
 import os
-from .pid_management import PidFilePaths, read_pid, read_child_pgids
+from .pid_management import read_pid, read_child_pgids
 from .config import CtlConfig, CtlActions
 
 
 logger = logging.getLogger(__name__)
 
 
-def send_kill_signal(pid_file_paths: PidFilePaths, sig: signal.Signals, daemon_name: str):
-    pid = read_pid(pid_file_paths.daemon_pid)
-    pgids = read_child_pgids(pid_file_paths.child_pgids)
+def send_kill_signal(
+    config: CtlConfig,
+    sig: signal.Signals,
+):
+    pid = read_pid(config.pid_file_paths.daemon_pid)
+    pgids = read_child_pgids(config.pid_file_paths.child_pgids)
     if pid is None and len(pgids) == 0:
-        logger.debug(f"Neither {daemon_name} daemon PID nor child PGIDs found.")
+        logger.debug(f"Neither {config.daemon_name} daemon PID nor child PGIDs found.")
         return
     try:
         os.kill(pid, sig)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        if config.treat_kill_permission_error_as_not_running:
+            logger.debug(f"Permission error when sending {sig.name} to {config.daemon_name} daemon. Treating as not running.")
+            return
+        raise
     for pgid in pgids:
         try:
             os.killpg(pgid, sig)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            if config.treat_kill_permission_error_as_not_running:
+                logger.debug(f"Permission error when sending {sig.name} to child PGID {pgid} of {config.daemon_name} daemon. Treating as not running.")
+                continue
+            raise
     logger.debug(f"Requested daemon to stop with signal {sig.name}.")
 
 
@@ -78,17 +91,17 @@ async def start_daemon(config: CtlConfig):
     logger.info(f"{config.daemon_name_cap} daemon started.")
 
 
-def stop_daemon(pid_file_paths: PidFilePaths, daemon_name: str):
-    logger.info(f"Stopping {daemon_name} daemon...")
-    send_kill_signal(pid_file_paths, signal.SIGTERM, daemon_name)
+def stop_daemon(config: CtlConfig):
+    logger.info(f"Stopping {config.daemon_name} daemon...")
+    send_kill_signal(config, signal.SIGTERM)
 
 
 async def restart_daemon(config: CtlConfig):
     logger.info(f"Restarting {config.daemon_name} daemon...")
-    stop_daemon(config.pid_file_paths, config.daemon_name)
+    stop_daemon(config)
     await start_daemon(config)
 
 
-def force_stop_daemon(pid_file_paths: PidFilePaths, daemon_name: str):
-    logger.info(f"Force-stopping {daemon_name} daemon...")
-    send_kill_signal(pid_file_paths, signal.SIGKILL, daemon_name)
+def force_stop_daemon(config: CtlConfig):
+    logger.info(f"Force-stopping {config.daemon_name} daemon...")
+    send_kill_signal(config, signal.SIGKILL)

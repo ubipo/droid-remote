@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import os
 import sys
-from typing import Optional
+from typing import Callable, Optional
 from pathlib import Path
 
 
@@ -37,30 +37,52 @@ def read_child_pgids(child_pgids_file_path: Optional[Path]) -> list[int]:
         return []
 
 
-def check_if_process_running(pid: Optional[int]):
+def check_if_process_running(
+    pid: Optional[int],
+    treat_kill_permission_error_as_not_running: bool = False,
+    send_signal: Optional[Callable] = None,
+):
     if pid is None:
         return False
+    if send_signal is None:
+        def send_signal():
+            os.kill(pid, 0)
     try:
-        os.kill(pid, 0)
+        send_signal()
     except ProcessLookupError:
         return False
+    except PermissionError:
+        if treat_kill_permission_error_as_not_running:
+            return False
+        raise
     return True
 
 
-def ensure_no_existing_process_or_exit(pid_file_paths: PidFilePaths, daemon_name: str):
+def check_if_process_group_running(
+    pgid: int,
+    treat_kill_permission_error_as_not_running: bool = False,
+):
+    return check_if_process_running(
+        None,
+        treat_kill_permission_error_as_not_running,
+        lambda: os.killpg(pgid, 0)
+    )
+
+
+def ensure_no_existing_process_or_exit(
+    pid_file_paths: PidFilePaths,
+    daemon_name: str,
+    treat_kill_permission_error_as_not_running: bool = False
+):
     daemon_name_cap = daemon_name.capitalize()
     pid = read_pid(pid_file_paths.daemon_pid)
     if pid is not None:
-        if check_if_process_running(pid):
+        if check_if_process_running(pid, treat_kill_permission_error_as_not_running):
             print(f"{daemon_name_cap} is still/already running ({pid=}).", file=sys.stderr)
             sys.exit(1)
     child_pgids = read_child_pgids(pid_file_paths.child_pgids)
     for pgid in child_pgids:
-        try:
-            os.killpg(pgid, 0)
-        except ProcessLookupError:
-            pass
-        else:
+        if check_if_process_group_running(pgid, treat_kill_permission_error_as_not_running):
             print(
                 f"Stray child processes of existing {daemon_name} instance are still running ({pgid=}).",
                 file=sys.stderr,
